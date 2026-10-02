@@ -1,0 +1,676 @@
+{
+  "name": "Customer Feedback & Syntheizer",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "ecd61ace-ad74-4bef-a581-6087e6f3cb26",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.apify.com/v2/datasets/IZjUb0IKSt1xKQPxu/items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "apify_api_wkIyZF9IakfoRSmU4RGwjVqsTRrATJ4vs3xQ"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "287312c9-86f2-444b-9c74-bdba9d9de1f7",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b36b20d0-dbb6-41c1-8850-32a70a68baa5",
+              "name": "reviewer",
+              "value": "={{ $json.reviewer }}",
+              "type": "string"
+            },
+            {
+              "id": "ec3b5372-9670-45ad-b797-be1ecdf0450e",
+              "name": "rating",
+              "value": "={{ $json.rating }}",
+              "type": "number"
+            },
+            {
+              "id": "260e8b6d-491c-4d9b-87a2-28330a375cef",
+              "name": "review",
+              "value": "={{ $json.body }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "0ad9b274-c6bc-47dd-9056-c3a2b3cd431f",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "models/gemini-3.1-flash-lite",
+          "cachedResultName": "models/gemini-3.1-flash-lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Analyze this ONE customer review.\n\nCustomer review:\n{{ $json.reviewText }}\n\nReturn ONLY valid JSON. Do not include markdown, explanation, or any other text.\n\n{\n  \"sentiment\": \"Positive\",\n  \"complaint\": \"\",\n  \"featureRequest\": \"\"\n}\n\nRules:\n- sentiment must be only Positive, Negative, or Neutral.\n- complaint should contain the customer's complaint, or \"\" if there is no complaint.\n- featureRequest should contain the customer's requested feature/improvement, or \"\" if there is none.\nconst input = $input.first().json;\n\n// Get AI response\nlet output = input.parts?.[0]?.text ?? \"\";\n\n// Clean the response\noutput = output\n  .replace(/```json/gi, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\n// Extract values directly from the AI response\nconst sentiment =\n  output.match(/\"sentiment\"\\s*:\\s*\"([^\"]*)\"/i)?.[1] ?? \"\";\n\nconst complaint =\n  output.match(/\"complaint\"\\s*:\\s*\"([^\"]*)\"/i)?.[1] ?? \"\";\n\nconst featureRequest =\n  output.match(/\"featureRequest\"\\s*:\\s*\"([^\"]*)\"/i)?.[1] ?? \"\";\n\nreturn [\n  {\n    json: {\n      reviewId: input.reviewId ?? \"\",\n      sentiment,\n      complaint,\n      featureRequest\n    }\n  }\n];"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "eaebf7fa-95e7-457b-8805-999f22f41b80",
+      "name": "Message a model",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        0
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "sQRdLkdOG8SRxDbz",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nconst output = input.content?.parts?.[0]?.text ?? \"\";\n\nlet data = {};\n\ntry {\n  data = JSON.parse(output);\n} catch (error) {\n  throw new Error(\"Invalid JSON: \" + output);\n}\n\nreturn [\n  {\n    json: {\n      ...input,\n      reviewId: $('Prepare Review').item.json.reviewId ?? \"\",\n      sentiment: data.sentiment ?? \"\",\n      complaint: data.complaint ?? \"\",\n      featureRequest: data.featureRequest ?? \"\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        0
+      ],
+      "id": "51f6e39a-5063-47ad-b263-00e43c3a8c64",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  const rating = Number(item.json.rating);\n\n  let sentiment;\n\n  if (rating >= 4) {\n    sentiment = \"Positive\";\n  } else if (rating <= 2) {\n    sentiment = \"Negative\";\n  } else {\n    sentiment = \"Neutral\";\n  }\n\n  return {\n    json: {\n      ...item.json,\n      sentiment\n    }\n  };\n});"
+      },
+      "id": "9ff52e28-6765-40f3-a79e-ab109c922f3e",
+      "name": "Prepare Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY",
+          "mode": "list",
+          "cachedResultName": "Sentiment Analysis",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "6e173873-1b95-4251-aefc-5b66d2540e65",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "a08z5KpyIWxHphOD",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3bc34715-4d38-4db5-bd9f-359e070b5207",
+              "leftValue": "={{ $json.sentiment }}",
+              "rightValue": "Positive",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1680,
+        0
+      ],
+      "id": "9584160b-fec6-4d7f-8295-5ddfa4d882a8",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY",
+          "mode": "list",
+          "cachedResultName": "Sentiment Analysis",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Positive reviews",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "reviewid": "={{ $json.reviewid }}",
+            "rating": "={{ $json.rating }}",
+            "reviewer": "={{ $json.reviewer }}",
+            "date": "={{ $json.date }}",
+            "review": "={{ $json.review }}",
+            "sentiment": "={{ $json.sentiment }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "reviewid",
+              "displayName": "reviewid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewer",
+              "displayName": "reviewer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "review",
+              "displayName": "review",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "sentiment",
+              "displayName": "sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewedIn",
+              "displayName": "reviewedIn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "userImage",
+              "displayName": "userImage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "position",
+              "displayName": "position",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "helpfulCounts",
+              "displayName": "helpfulCounts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "appId",
+              "displayName": "appId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "appVersion",
+              "displayName": "appVersion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "language",
+              "displayName": "language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reviewId",
+              "displayName": "reviewId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "complaint",
+              "displayName": "complaint",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "featureRequest",
+              "displayName": "featureRequest",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "col_20",
+              "displayName": "col_20",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "col_21",
+              "displayName": "col_21",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "col_22",
+              "displayName": "col_22",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1936,
+        -48
+      ],
+      "id": "6a76adb3-30e1-4ed6-88f4-2487ceecad38",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "a08z5KpyIWxHphOD",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8e91c179-5de1-48ec-a4ec-ef4a210440ee",
+              "leftValue": "={{ $json.sentiment }}",
+              "rightValue": "Negative",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1904,
+        96
+      ],
+      "id": "218cc3e6-dca6-4002-a992-33d741a115a2",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY",
+          "mode": "list",
+          "cachedResultName": "Sentiment Analysis",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2067787708,
+          "mode": "list",
+          "cachedResultName": "Negative reviews",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1gswdjgpWGSqLbVFTc6pSCCtkjW431Etf1JhiXQnthCY/edit#gid=2067787708"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2176,
+        96
+      ],
+      "id": "9c274d13-6f10-42b3-9b6b-638ef4076dce",
+      "name": "Append row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "a08z5KpyIWxHphOD",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Prepare Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Review": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f0a76f73-29f8-4172-8775-73a8d79d321e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3d12e450b04870cc7a8e495b7401165d4a00423d78ba3a146e6be2e1d03c8277"
+  },
+  "nodeGroups": [],
+  "id": "htBpW2MXrUDxK7i6",
+  "tags": []
+}
